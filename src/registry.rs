@@ -3,6 +3,7 @@
 //! See [`Registry`] for details.
 
 use std::borrow::Cow;
+use std::time::SystemTime;
 
 use crate::collector::Collector;
 use crate::encoding::{DescriptorEncoder, EncodeMetric};
@@ -297,6 +298,36 @@ impl Registry {
                 EncodeMetric::metric_type(metric.as_ref()),
             )?;
             metric.encode(metric_encoder)?;
+        }
+
+        for collector in self.collectors.iter() {
+            let descriptor_encoder =
+                encoder.with_prefix_and_labels(self.prefix.as_ref(), &self.labels);
+            collector.encode(descriptor_encoder)?;
+        }
+
+        for registry in self.sub_registries.iter() {
+            registry.encode(encoder)?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn encode_with_ts(
+        &self,
+        encoder: &mut DescriptorEncoder,
+        ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        for (descriptor, metric) in self.metrics.iter() {
+            let mut descriptor_encoder =
+                encoder.with_prefix_and_labels(self.prefix.as_ref(), &self.labels);
+            let metric_encoder = descriptor_encoder.encode_descriptor(
+                &descriptor.name,
+                &descriptor.help,
+                descriptor.unit.as_ref(),
+                EncodeMetric::metric_type(metric.as_ref()),
+            )?;
+            metric.encode_with_ts(metric_encoder, ts)?;
         }
 
         for collector in self.collectors.iter() {

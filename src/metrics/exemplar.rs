@@ -159,9 +159,18 @@ where
     N: EncodeCounterValue + EncodeExemplarValue + Clone,
     A: counter::Atomic<N>,
 {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        let (value, exemplar) = self.get();
+        encoder.encode_counter(&value, Some(&ts), exemplar.as_ref())
+    }
+
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
         let (value, exemplar) = self.get();
-        encoder.encode_counter(&value, exemplar.as_ref())
+        encoder.encode_counter(&value, None, exemplar.as_ref())
     }
 
     fn metric_type(&self) -> MetricType {
@@ -273,6 +282,16 @@ impl<S> HistogramWithExemplars<S> {
 }
 
 impl<S: EncodeLabelSet> EncodeMetric for HistogramWithExemplars<S> {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        _ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        let inner = self.inner();
+        let (sum, count, buckets) = inner.histogram.get();
+        encoder.encode_histogram(sum, count, &buckets, Some(&inner.exemplars))
+    }
+
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
         let inner = self.inner();
         let (sum, count, buckets) = inner.histogram.get();

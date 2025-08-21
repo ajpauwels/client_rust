@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use parking_lot::RwLock;
 use prometheus_client::encoding::{text::encode, EncodeMetric, MetricEncoder, NoLabelSet};
 use prometheus_client::metrics::MetricType;
 use prometheus_client::registry::Registry;
@@ -20,7 +23,11 @@ impl EncodeMetric for MyCustomMetric {
         // E.g. every CPU cycle spend in this method delays the response send to
         // the Prometheus server.
 
-        encoder.encode_counter::<NoLabelSet, _, u64>(&rand::random::<u64>(), None)
+        encoder.encode_counter::<NoLabelSet, _, u64>(
+            &rand::random::<u64>(),
+            Arc::new(RwLock::new(None)),
+            None,
+        )
     }
 
     fn metric_type(&self) -> prometheus_client::metrics::MetricType {

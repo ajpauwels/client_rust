@@ -2,6 +2,8 @@
 //!
 //! See [`Info`] for details.
 
+use std::time::SystemTime;
+
 use crate::{
     encoding::{EncodeLabelSet, EncodeMetric, MetricEncoder},
     metrics::{MetricType, TypedMetric},
@@ -33,6 +35,14 @@ impl<S> EncodeMetric for Info<S>
 where
     S: Clone + std::hash::Hash + Eq + EncodeLabelSet,
 {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        _ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        encoder.encode_info(&self.0)
+    }
+
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
         encoder.encode_info(&self.0)
     }

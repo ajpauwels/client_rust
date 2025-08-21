@@ -8,6 +8,7 @@ use super::{MetricType, TypedMetric};
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 /// Representation of the OpenMetrics *MetricFamily* data type.
 ///
@@ -365,6 +366,19 @@ where
     M: EncodeMetric + TypedMetric,
     C: MetricConstructor<M>,
 {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        let guard = self.read();
+        for (label_set, m) in guard.iter() {
+            let encoder = encoder.encode_family(label_set)?;
+            m.encode_with_ts(encoder, ts)?;
+        }
+        Ok(())
+    }
+
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
         let guard = self.read();
         for (label_set, m) in guard.iter() {

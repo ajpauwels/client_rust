@@ -8,6 +8,7 @@ use super::{MetricType, TypedMetric};
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::iter::{self, once};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 /// Open Metrics [`Histogram`] to measure distributions of discrete events.
 ///
@@ -160,6 +161,15 @@ pub fn linear_buckets(start: f64, width: f64, length: u16) -> impl Iterator<Item
 }
 
 impl EncodeMetric for Histogram {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        __ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        let (sum, count, buckets) = self.get();
+        encoder.encode_histogram::<NoLabelSet>(sum, count, &buckets, None)
+    }
+
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
         let (sum, count, buckets) = self.get();
         encoder.encode_histogram::<NoLabelSet>(sum, count, &buckets, None)

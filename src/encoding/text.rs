@@ -37,7 +37,9 @@
 //! assert_eq!(expected_msg, buffer);
 //! ```
 
-use crate::encoding::{EncodeExemplarTime, EncodeExemplarValue, EncodeLabelSet, NoLabelSet};
+use crate::encoding::{
+    EncodeCounterTime, EncodeExemplarTime, EncodeExemplarValue, EncodeLabelSet, NoLabelSet,
+};
 use crate::metrics::exemplar::Exemplar;
 use crate::metrics::MetricType;
 use crate::registry::{Prefix, Registry, Unit};
@@ -45,6 +47,7 @@ use crate::registry::{Prefix, Registry, Unit};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::time::SystemTime;
 
 /// Encode both the metrics registered with the provided [`Registry`] and the
 /// EOF marker into the provided [`Write`]r using the OpenMetrics text format.
@@ -143,6 +146,19 @@ where
     W: Write,
 {
     registry.encode(&mut DescriptorEncoder::new(writer).into())
+}
+
+/// Does the same thing as encode but enforces a specific timestmap at
+/// the end of each line
+pub fn encode_registry_with_ts<W>(
+    writer: &mut W,
+    registry: &Registry,
+    ts: SystemTime,
+) -> Result<(), std::fmt::Error>
+where
+    W: Write,
+{
+    registry.encode_with_ts(&mut DescriptorEncoder::new(writer).into(), ts)
 }
 
 /// Encode the EOF marker into the provided [`Write`]r using the OpenMetrics
@@ -319,6 +335,7 @@ impl MetricEncoder<'_> {
     >(
         &mut self,
         v: &CounterValue,
+        ts: Option<&SystemTime>,
         exemplar: Option<&Exemplar<S, ExemplarValue>>,
     ) -> Result<(), std::fmt::Error> {
         self.write_prefix_name_unit()?;
@@ -334,6 +351,16 @@ impl MetricEncoder<'_> {
             .into(),
         )?;
 
+        if let Some(ts) = ts {
+            EncodeCounterTime::encode(
+                ts,
+                CounterValueEncoder {
+                    writer: self.writer,
+                }
+                .into(),
+            )?;
+        }
+
         if let Some(exemplar) = exemplar {
             self.encode_exemplar(exemplar)?;
         }
@@ -346,6 +373,7 @@ impl MetricEncoder<'_> {
     pub fn encode_gauge<GaugeValue: super::EncodeGaugeValue>(
         &mut self,
         v: &GaugeValue,
+        ts: Option<&SystemTime>,
     ) -> Result<(), std::fmt::Error> {
         self.write_prefix_name_unit()?;
 
@@ -357,6 +385,16 @@ impl MetricEncoder<'_> {
             }
             .into(),
         )?;
+
+        if let Some(ts) = ts {
+            EncodeCounterTime::encode(
+                ts,
+                CounterValueEncoder {
+                    writer: self.writer,
+                }
+                .into(),
+            )?;
+        }
 
         self.newline()?;
 
@@ -462,7 +500,8 @@ impl MetricEncoder<'_> {
         )?;
         if let Some(timestamp) = exemplar.timestamp {
             self.writer.write_char(' ')?;
-            timestamp.encode(
+            EncodeExemplarTime::encode(
+                &timestamp,
                 ExemplarValueEncoder {
                     writer: self.writer,
                 }

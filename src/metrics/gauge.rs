@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 #[cfg(target_has_atomic = "64")]
 use std::sync::atomic::{AtomicI64, AtomicU64};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 /// Open Metrics [`Gauge`] to record current measurements.
 ///
@@ -346,8 +347,15 @@ where
     N: EncodeGaugeValue,
     A: Atomic<N>,
 {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        encoder.encode_gauge(&self.get(), Some(&ts))
+    }
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
-        encoder.encode_gauge(&self.get())
+        encoder.encode_gauge(&self.get(), None)
     }
     fn metric_type(&self) -> MetricType {
         Self::TYPE
@@ -377,8 +385,16 @@ impl<N> EncodeMetric for ConstGauge<N>
 where
     N: EncodeGaugeValue,
 {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        encoder.encode_gauge(&self.value, Some(&ts))
+    }
+
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
-        encoder.encode_gauge(&self.value)
+        encoder.encode_gauge(&self.value, None)
     }
 
     fn metric_type(&self) -> MetricType {

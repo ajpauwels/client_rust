@@ -2,6 +2,8 @@
 //!
 //! See [`Counter`] for details.
 
+use parking_lot::RwLock;
+
 use crate::encoding::{EncodeMetric, MetricEncoder, NoLabelSet};
 
 use super::{MetricType, TypedMetric};
@@ -10,6 +12,7 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 /// Open Metrics [`Counter`] to measure discrete events.
 ///
@@ -45,6 +48,7 @@ use std::sync::Arc;
 pub struct Counter<N = u64, A = AtomicU64> {
     value: Arc<A>,
     phantom: PhantomData<N>,
+    timestamp: Arc<RwLock<Option<SystemTime>>>,
 }
 
 /// Open Metrics [`Counter`] to measure discrete events.
@@ -53,6 +57,7 @@ pub struct Counter<N = u64, A = AtomicU64> {
 pub struct Counter<N = u32, A = AtomicU32> {
     value: Arc<A>,
     phantom: PhantomData<N>,
+    timestamp: Arc<RwLock<Option<SystemTime>>>,
 }
 
 impl<N, A> Clone for Counter<N, A> {
@@ -60,6 +65,7 @@ impl<N, A> Clone for Counter<N, A> {
         Self {
             value: self.value.clone(),
             phantom: PhantomData,
+            timestamp: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -69,6 +75,7 @@ impl<N, A: Default> Default for Counter<N, A> {
         Counter {
             value: Arc::new(A::default()),
             phantom: PhantomData,
+            timestamp: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -79,8 +86,22 @@ impl<N, A: Atomic<N>> Counter<N, A> {
         self.value.inc()
     }
 
+    /// Increase the [`Counter`] by 1, returning the previous value.
+    pub fn inc_with_ts(&self, ts: SystemTime) -> N {
+        let mut old_ts = self.timestamp.write();
+        *old_ts = Some(ts);
+        self.value.inc()
+    }
+
     /// Increase the [`Counter`] by `v`, returning the previous value.
     pub fn inc_by(&self, v: N) -> N {
+        self.value.inc_by(v)
+    }
+
+    /// Increase the [`Counter`] by `v`, returning the previous value.
+    pub fn inc_by_with_ts(&self, v: N, ts: SystemTime) -> N {
+        let mut old_ts = self.timestamp.write();
+        *old_ts = Some(ts);
         self.value.inc_by(v)
     }
 
@@ -203,8 +224,17 @@ where
     N: crate::encoding::EncodeCounterValue,
     A: Atomic<N>,
 {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        encoder.encode_counter::<NoLabelSet, _, u64>(&self.get(), Some(&ts), None)
+    }
+
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
-        encoder.encode_counter::<NoLabelSet, _, u64>(&self.get(), None)
+        let ts = self.timestamp.read();
+        encoder.encode_counter::<NoLabelSet, _, u64>(&self.get(), ts.as_ref(), None)
     }
 
     fn metric_type(&self) -> MetricType {
@@ -235,8 +265,16 @@ impl<N> EncodeMetric for ConstCounter<N>
 where
     N: crate::encoding::EncodeCounterValue,
 {
+    fn encode_with_ts(
+        &self,
+        mut encoder: MetricEncoder,
+        ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        encoder.encode_counter::<NoLabelSet, _, u64>(&self.value, Some(&ts), None)
+    }
+
     fn encode(&self, mut encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
-        encoder.encode_counter::<NoLabelSet, _, u64>(&self.value, None)
+        encoder.encode_counter::<NoLabelSet, _, u64>(&self.value, None, None)
     }
 
     fn metric_type(&self) -> MetricType {

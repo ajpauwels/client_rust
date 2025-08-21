@@ -42,6 +42,12 @@ macro_rules! for_both {
 /// [`Counter`](crate::metrics::counter::Counter), to implement its encoding in
 /// the OpenMetric text format.
 pub trait EncodeMetric {
+    /// Encode the given instance in the OpenMetrics text encoding,
+    /// forcing the timestamp to a particular value
+    // TODO: Lifetimes on MetricEncoder needed?
+    fn encode_with_ts(&self, encoder: MetricEncoder, ts: SystemTime)
+        -> Result<(), std::fmt::Error>;
+
     /// Encode the given instance in the OpenMetrics text encoding.
     // TODO: Lifetimes on MetricEncoder needed?
     fn encode(&self, encoder: MetricEncoder) -> Result<(), std::fmt::Error>;
@@ -53,6 +59,14 @@ pub trait EncodeMetric {
 }
 
 impl EncodeMetric for Box<dyn EncodeMetric> {
+    fn encode_with_ts(
+        &self,
+        encoder: MetricEncoder,
+        ts: SystemTime,
+    ) -> Result<(), std::fmt::Error> {
+        self.deref().encode_with_ts(encoder, ts)
+    }
+
     fn encode(&self, encoder: MetricEncoder) -> Result<(), std::fmt::Error> {
         self.deref().encode(encoder)
     }
@@ -153,17 +167,24 @@ impl MetricEncoder<'_> {
     >(
         &mut self,
         v: &CounterValue,
+        ts: Option<&SystemTime>,
         exemplar: Option<&Exemplar<S, ExemplarValue>>,
     ) -> Result<(), std::fmt::Error> {
-        for_both_mut!(self, MetricEncoderInner, e, e.encode_counter(v, exemplar))
+        for_both_mut!(
+            self,
+            MetricEncoderInner,
+            e,
+            e.encode_counter(v, ts, exemplar)
+        )
     }
 
     /// Encode a gauge.
     pub fn encode_gauge<GaugeValue: EncodeGaugeValue>(
         &mut self,
         v: &GaugeValue,
+        ts: Option<&SystemTime>,
     ) -> Result<(), std::fmt::Error> {
-        for_both_mut!(self, MetricEncoderInner, e, e.encode_gauge(v))
+        for_both_mut!(self, MetricEncoderInner, e, e.encode_gauge(v, ts))
     }
 
     /// Encode an info.
@@ -694,6 +715,18 @@ impl EncodeCounterValue for u32 {
 impl EncodeCounterValue for f32 {
     fn encode(&self, encoder: &mut CounterValueEncoder) -> Result<(), std::fmt::Error> {
         encoder.encode_f64(*self as f64)
+    }
+}
+
+/// An encodable counter time.
+pub trait EncodeCounterTime {
+    /// Encode the time in the OpenMetrics text encoding.
+    fn encode(&self, encoder: CounterValueEncoder) -> Result<(), std::fmt::Error>;
+}
+
+impl EncodeCounterTime for SystemTime {
+    fn encode(&self, mut encoder: CounterValueEncoder) -> Result<(), std::fmt::Error> {
+        encoder.encode_u64(self.duration_since(UNIX_EPOCH).unwrap().as_secs())
     }
 }
 
